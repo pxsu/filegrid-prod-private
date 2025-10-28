@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as PIXI from 'pixi.js';
 import { Canvas } from '@/lib/models/Canvas';
 import { Viewport } from '@/lib/canvas/Viewport';
+import { Grid, GridStyle } from '@/lib/canvas/Grid';
 
 interface PixiCanvasProps {
     canvas: Canvas;
@@ -15,7 +16,9 @@ export default function PixiCanvas({ canvas, onCanvasUpdate }: PixiCanvasProps) 
     const containerRef = useRef<HTMLDivElement>(null);
     const appRef = useRef<PIXI.Application | null>(null);
     const viewportRef = useRef<Viewport | null>(null);
+    const gridRef = useRef<Grid | null>(null);
     const [zoom, setZoom] = useState(1);
+    const [gridStyle, setGridStyle] = useState<GridStyle>('lines');
     const [isSpacePressed, setIsSpacePressed] = useState(false);
 
     useEffect(() => {
@@ -51,7 +54,7 @@ export default function PixiCanvas({ canvas, onCanvasUpdate }: PixiCanvasProps) 
             });
             viewportRef.current = viewport;
 
-            // Apply stored viewport settings from canvas data
+            // Apply stored viewport settings
             viewport.container.position.set(
                 canvas.data.viewport.x,
                 canvas.data.viewport.y
@@ -59,17 +62,29 @@ export default function PixiCanvas({ canvas, onCanvasUpdate }: PixiCanvasProps) 
             viewport.container.scale.set(canvas.data.viewport.zoom);
             setZoom(canvas.data.viewport.zoom);
 
+            // Add viewport container first
             app.stage.addChild(viewport.container);
+
+            // Create grid inside viewport (so it transforms with the viewport)
+            const grid = new Grid({
+                style: gridStyle,
+                majorGridSize: 100,
+                minorGridSize: 20,
+            });
+            gridRef.current = grid;
+
+            viewport.container.addChild(grid.getContainer());
 
             // Setup event handlers
             setupEventHandlers(app, viewport);
 
-            // Render objects from canvas.data
+            // Render objects
             renderObjects(viewport, canvas);
 
-            // Update zoom indicator on every frame
+            // Update loop
             app.ticker.add(() => {
                 setZoom(viewport.zoom);
+                grid.update(viewport, app.screen.width, app.screen.height);
             });
         };
 
@@ -77,6 +92,7 @@ export default function PixiCanvas({ canvas, onCanvasUpdate }: PixiCanvasProps) 
 
         return () => {
             isDestroyed = true;
+            gridRef.current?.destroy();
             if (appRef.current) {
                 appRef.current.destroy(true);
                 appRef.current = null;
@@ -84,17 +100,13 @@ export default function PixiCanvas({ canvas, onCanvasUpdate }: PixiCanvasProps) 
         };
     }, [canvas]);
 
+    // Update grid style when changed
+    useEffect(() => {
+        gridRef.current?.setStyle(gridStyle);
+    }, [gridStyle]);
+
     const setupEventHandlers = (app: PIXI.Application, viewport: Viewport) => {
         const canvas = app.canvas;
-        let currentCursor = 'default';
-
-        const updateCursor = () => {
-            if (isSpacePressed || viewport.isDraggingMouse) {
-                canvas.style.cursor = 'grabbing';
-            } else {
-                canvas.style.cursor = currentCursor;
-            }
-        };
 
         // Keyboard - Space bar for pan mode
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -115,22 +127,20 @@ export default function PixiCanvas({ canvas, onCanvasUpdate }: PixiCanvasProps) 
         window.addEventListener('keydown', handleKeyDown);
         window.addEventListener('keyup', handleKeyUp);
 
-        // Wheel zoom (mouse/trackpad)
+        // Wheel zoom
         canvas.addEventListener('wheel', (e: WheelEvent) => {
             viewport.handleWheel(e, { x: e.clientX, y: e.clientY });
         }, { passive: false });
 
-        // Mouse events for panning
+        // Mouse/touch events
         canvas.addEventListener('pointerdown', (e: PointerEvent) => {
             if (e.pointerType === 'mouse') {
-                // Left click OR space+click = pan
                 if (e.button === 0) {
                     viewport.startMouseDrag({ x: e.clientX, y: e.clientY });
                     canvas.style.cursor = 'grabbing';
                     e.preventDefault();
                 }
             } else if (e.pointerType === 'touch') {
-                // Touch events
                 viewport.handleTouchStart(e.pointerId, { x: e.clientX, y: e.clientY });
             }
         });
@@ -160,7 +170,6 @@ export default function PixiCanvas({ canvas, onCanvasUpdate }: PixiCanvasProps) 
             }
         });
 
-        // Cleanup
         return () => {
             window.removeEventListener('keydown', handleKeyDown);
             window.removeEventListener('keyup', handleKeyUp);
@@ -168,12 +177,11 @@ export default function PixiCanvas({ canvas, onCanvasUpdate }: PixiCanvasProps) 
     };
 
     const renderObjects = (viewport: Viewport, canvas: Canvas) => {
-        // Render a test circle
+        // Render test circles on top of grid
         const graphics = new PIXI.Graphics();
         graphics.circle(200, 200, 100);
         graphics.fill(0xff0000);
 
-        // Add a smaller circle
         const graphics2 = new PIXI.Graphics();
         graphics2.circle(400, 300, 50);
         graphics2.fill(0x0000ff);
@@ -205,6 +213,34 @@ export default function PixiCanvas({ canvas, onCanvasUpdate }: PixiCanvasProps) 
                 style={{ cursor: 'default', touchAction: 'none' }}
             />
 
+            {/* Grid style selector */}
+            <div className="absolute top-4 right-4 bg-white/90 px-3 py-2 rounded shadow">
+                <p className="text-xs font-semibold mb-2">Grid Style:</p>
+                <div className="flex gap-2">
+                    <button
+                        onClick={() => setGridStyle('none')}
+                        className={`px-3 py-1 text-xs rounded ${gridStyle === 'none' ? 'bg-blue-500 text-white' : 'bg-gray-200'
+                            }`}
+                    >
+                        None
+                    </button>
+                    <button
+                        onClick={() => setGridStyle('lines')}
+                        className={`px-3 py-1 text-xs rounded ${gridStyle === 'lines' ? 'bg-blue-500 text-white' : 'bg-gray-200'
+                            }`}
+                    >
+                        Lines
+                    </button>
+                    <button
+                        onClick={() => setGridStyle('dots')}
+                        className={`px-3 py-1 text-xs rounded ${gridStyle === 'dots' ? 'bg-blue-500 text-white' : 'bg-gray-200'
+                            }`}
+                    >
+                        Dots
+                    </button>
+                </div>
+            </div>
+
             {/* Zoom indicator */}
             <div className="absolute top-4 left-4 bg-white/90 px-3 py-2 rounded shadow text-sm pointer-events-none select-none">
                 <p className="font-semibold">{canvas.title}</p>
@@ -215,14 +251,8 @@ export default function PixiCanvas({ canvas, onCanvasUpdate }: PixiCanvasProps) 
 
             {/* Instructions */}
             <div className="absolute bottom-4 left-4 bg-white/90 px-3 py-2 rounded shadow text-xs text-gray-600 pointer-events-none select-none">
-                <p className="font-semibold mb-1">Mouse Controls:</p>
-                <p>🖱️ Drag = Pan</p>
-                <p>🖱️ Scroll = Zoom</p>
-                <p>⌘/Ctrl + Scroll = Fast zoom</p>
-                <p>Space + Drag = Pan (alt)</p>
-                <p className="font-semibold mt-2 mb-1">Touch Controls:</p>
-                <p>👆 One finger = Pan</p>
-                <p>🤏 Two fingers = Pinch zoom</p>
+                <p>🖱️ Drag to pan • Scroll to zoom</p>
+                <p>⌘/Ctrl + Scroll for fast zoom</p>
             </div>
         </div>
     );
