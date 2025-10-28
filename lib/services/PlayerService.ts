@@ -1,8 +1,24 @@
 // lib/services/PlayerService.ts
 
 import { Player, PlayerRole, PlayerStatus } from '@/lib/models/Player';
+import { db } from '@/lib/firebase/config';
+import {
+    collection,
+    doc,
+    getDoc,
+    setDoc,
+    updateDoc,
+    deleteDoc,
+    query,
+    where,
+    getDocs,
+    orderBy,
+    limit
+} from 'firebase/firestore';
 
 export class PlayerService {
+    private static COLLECTION = 'players';
+
     // Add player to canvas
     static async addPlayer(
         canvasId: string,
@@ -10,46 +26,59 @@ export class PlayerService {
         role: PlayerRole
     ): Promise<Player> {
         const player = new Player(canvasId, userId, role);
-
-        // TODO: Save to database
-        // await db.player.create({ data: player.toJSON() });
-
+        await setDoc(doc(db, this.COLLECTION, player.id), player.toJSON());
         return player;
     }
 
     // Get player by ID
     static async getPlayerById(id: string): Promise<Player | null> {
-        // TODO: Fetch from database
-        // const data = await db.player.findUnique({ where: { id } });
-        // if (!data) return null;
-        // return Player.fromJSON(data);
+        try {
+            const docRef = doc(db, this.COLLECTION, id);
+            const docSnap = await getDoc(docRef);
 
-        return null;
+            if (!docSnap.exists()) {
+                return null;
+            }
+
+            return Player.fromJSON(docSnap.data());
+        } catch (error) {
+            console.error('Error fetching player by id:', error);
+            return null;
+        }
     }
 
     // Get all players for a canvas
     static async getPlayersByCanvas(canvasId: string): Promise<Player[]> {
-        // TODO: Fetch from database
-        // const data = await db.player.findMany({
-        //   where: { canvasId }
-        // });
-        // return data.map(d => Player.fromJSON(d));
+        try {
+            const q = query(
+                collection(db, this.COLLECTION),
+                where('canvasId', '==', canvasId),
+                orderBy('lastActiveAt', 'desc')
+            );
 
-        return [];
+            const querySnapshot = await getDocs(q);
+            return querySnapshot.docs.map(doc => Player.fromJSON(doc.data()));
+        } catch (error) {
+            console.error('Error fetching players by canvas:', error);
+            return [];
+        }
     }
 
     // Get active players for a canvas
     static async getActivePlayers(canvasId: string): Promise<Player[]> {
-        // TODO: Fetch from database
-        // const data = await db.player.findMany({
-        //   where: {
-        //     canvasId,
-        //     status: { in: ['active', 'idle'] }
-        //   }
-        // });
-        // return data.map(d => Player.fromJSON(d));
+        try {
+            const q = query(
+                collection(db, this.COLLECTION),
+                where('canvasId', '==', canvasId),
+                where('status', 'in', ['active', 'idle'])
+            );
 
-        return [];
+            const querySnapshot = await getDocs(q);
+            return querySnapshot.docs.map(doc => Player.fromJSON(doc.data()));
+        } catch (error) {
+            console.error('Error fetching active players:', error);
+            return [];
+        }
     }
 
     // Get player by canvas and user
@@ -57,26 +86,31 @@ export class PlayerService {
         canvasId: string,
         userId: string
     ): Promise<Player | null> {
-        // TODO: Fetch from database
-        // const data = await db.player.findFirst({
-        //   where: { canvasId, userId }
-        // });
-        // if (!data) return null;
-        // return Player.fromJSON(data);
+        try {
+            const q = query(
+                collection(db, this.COLLECTION),
+                where('canvasId', '==', canvasId),
+                where('userId', '==', userId),
+                limit(1)
+            );
 
-        return null;
+            const querySnapshot = await getDocs(q);
+
+            if (querySnapshot.empty) {
+                return null;
+            }
+
+            return Player.fromJSON(querySnapshot.docs[0].data());
+        } catch (error) {
+            console.error('Error fetching player by canvas and user:', error);
+            return null;
+        }
     }
 
     // Update player
     static async updatePlayer(player: Player): Promise<Player> {
         player.lastActiveAt = new Date();
-
-        // TODO: Save to database
-        // await db.player.update({
-        //   where: { id: player.id },
-        //   data: player.toJSON()
-        // });
-
+        await updateDoc(doc(db, this.COLLECTION, player.id), player.toJSON());
         return player;
     }
 
@@ -122,8 +156,7 @@ export class PlayerService {
 
     // Remove player from canvas
     static async removePlayer(playerId: string): Promise<void> {
-        // TODO: Delete from database
-        // await db.player.delete({ where: { id: playerId } });
+        await deleteDoc(doc(db, this.COLLECTION, playerId));
     }
 
     // Update player selection
@@ -149,13 +182,24 @@ export class PlayerService {
 
     // Get canvas owner
     static async getCanvasOwner(canvasId: string): Promise<Player | null> {
-        // TODO: Fetch from database
-        // const data = await db.player.findFirst({
-        //   where: { canvasId, role: 'owner' }
-        // });
-        // if (!data) return null;
-        // return Player.fromJSON(data);
+        try {
+            const q = query(
+                collection(db, this.COLLECTION),
+                where('canvasId', '==', canvasId),
+                where('role', '==', 'owner'),
+                limit(1)
+            );
 
-        return null;
+            const querySnapshot = await getDocs(q);
+
+            if (querySnapshot.empty) {
+                return null;
+            }
+
+            return Player.fromJSON(querySnapshot.docs[0].data());
+        } catch (error) {
+            console.error('Error fetching canvas owner:', error);
+            return null;
+        }
     }
 }
