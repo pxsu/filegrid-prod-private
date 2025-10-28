@@ -6,13 +6,15 @@ import * as PIXI from 'pixi.js';
 import { Canvas } from '@/lib/models/Canvas';
 import { Viewport } from '@/lib/canvas/Viewport';
 import { Grid, GridStyle } from '@/lib/canvas/Grid';
+import { useCanvasSync } from '@/lib/hooks/useCanvasSync';
 
 interface PixiCanvasProps {
     canvas: Canvas;
     onCanvasUpdate?: (canvas: Canvas) => void;
+    enableSync?: boolean;
 }
 
-export default function PixiCanvas({ canvas, onCanvasUpdate }: PixiCanvasProps) {
+export default function PixiCanvas({ canvas, onCanvasUpdate, enableSync = true }: PixiCanvasProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const appRef = useRef<PIXI.Application | null>(null);
     const viewportRef = useRef<Viewport | null>(null);
@@ -20,6 +22,13 @@ export default function PixiCanvas({ canvas, onCanvasUpdate }: PixiCanvasProps) 
     const [zoom, setZoom] = useState(1);
     const [gridStyle, setGridStyle] = useState<GridStyle>('lines');
     const [isSpacePressed, setIsSpacePressed] = useState(false);
+    
+    // Enable real-time sync between viewport and server
+    const { syncViewportToServer } = useCanvasSync(
+        enableSync ? canvas : null,
+        viewportRef.current,
+        onCanvasUpdate
+    );
 
     useEffect(() => {
         if (!containerRef.current) return;
@@ -85,6 +94,11 @@ export default function PixiCanvas({ canvas, onCanvasUpdate }: PixiCanvasProps) 
             app.ticker.add(() => {
                 setZoom(viewport.zoom);
                 grid.update(viewport, app.screen.width, app.screen.height);
+                
+                // Sync viewport to server (throttled internally)
+                if (enableSync) {
+                    syncViewportToServer();
+                }
             });
         };
 
